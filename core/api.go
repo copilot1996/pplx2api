@@ -114,6 +114,7 @@ type ImageModeBlock struct {
 
 // NewClient creates a new Perplexity API client
 func NewClient(sessionToken string, proxy string, model string, openSerch bool) *Client {
+	fmt.Printf("DEBUG: Current Proxy being used: %s\n", proxy)
 	client := req.C().ImpersonateChrome().SetTimeout(time.Minute * 10)
 	client.Transport.SetResponseHeaderTimeout(time.Second * 10)
 	if proxy != "" {
