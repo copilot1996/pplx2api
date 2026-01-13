@@ -141,6 +141,12 @@ func init() {
 		Mutex: sync.Mutex{},
 	}
 	ConfigInstance = LoadConfig()
+	// 【加入这几行】
+	fmt.Println("================================================")
+	fmt.Printf("CRITICAL DEBUG: PROXY ENV FROM SYSTEM: %s\n", os.Getenv("PROXY"))
+	fmt.Printf("CRITICAL DEBUG: PROXY STORED IN CONFIG: %s\n", ConfigInstance.Proxy)
+	fmt.Println("================================================")
+
 	logger.Info("Loaded config:")
 	logger.Info(fmt.Sprintf("Sessions count: %d", ConfigInstance.RetryCount))
 	for _, session := range ConfigInstance.Sessions {
