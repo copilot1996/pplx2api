@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"pplx2api/config"
@@ -74,6 +75,8 @@ type PerplexityParams struct {
 	ForceEnableBrowserAgent         bool        `json:"force_enable_browser_agent"`
 	SupportedFeatures               []string    `json:"supported_features"`
 	Version                         string      `json:"version"`
+	LastBackendUUID                 string      `json:"last_backend_uuid,omitempty"`
+	ReadWriteToken                  string      `json:"read_write_token,omitempty"`
 }
 
 // Response structures
@@ -191,6 +194,9 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 	// Generate new Request ID for this specific message
 	requestID := uuid.New().String()
 
+	// Randomize typing time (600ms - 1000ms)
+	typingTime := 600.0 + rand.Float64()*400.0
+
 	// 构造完全对齐的 Payload
 	requestBody := PerplexityRequest{
 		Params: PerplexityParams{
@@ -210,7 +216,8 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 			PromptSource:                    "user",
 			QuerySource:                     "home",
 			IsIncognito:                     is_incognito,
-			TimeFromFirstType:               780.5,
+			IsIncognito:                     is_incognito,
+			TimeFromFirstType:               typingTime,
 			LocalSearchEnabled:              false,
 			UseSchematizedAPI:               true,
 			SendBackTextInStreamingAPI:      false,
