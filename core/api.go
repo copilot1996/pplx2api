@@ -208,7 +208,7 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 			SearchRecencyFilter: nil,
 			FrontendUUID:        requestID, // 核心对齐
 			Mode:                "copilot",
-			ModelPreference:     "experimental",
+			ModelPreference:     c.Model,
 			IsRelatedQuery:      false,
 			IsSponsored:         false,
 			VisitorID:           "96069ba2-f72e-4d3c-8587-f6d70928e6ed",
