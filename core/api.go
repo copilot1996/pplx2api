@@ -188,8 +188,8 @@ func NewClient(fullCookie string, proxy string, model string, openSerch bool) *C
 }
 
 func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc *gin.Context) (int, error) {
-	// 获取刚才在 NewClient 里设置的 x-request-id
-	reqID := c.client.Headers.Get("x-request-id")
+	// Generate new Request ID for this specific message
+	requestID := uuid.New().String()
 
 	// 构造完全对齐的 Payload
 	requestBody := PerplexityRequest{
@@ -200,11 +200,12 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 			SearchFocus:                     "internet",
 			Sources:                         []string{"web"},
 			SearchRecencyFilter:             nil,
-			FrontendUUID:                    reqID, // 核心对齐
+			FrontendUUID:                    requestID, // 核心对齐
 			Mode:                            "copilot",
 			ModelPreference:                 "experimental",
 			IsRelatedQuery:                  false,
 			IsSponsored:                     false,
+			VisitorID:                       "96069ba2-f72e-4d3c-8587-f6d70928e6ed",
 			FrontendContextUUID:             uuid.New().String(),
 			PromptSource:                    "user",
 			QuerySource:                     "home",
@@ -237,6 +238,7 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 	logger.Info(fmt.Sprintf("Perplexity request body: %v", requestBody))
 	// Make the request
 	resp, err := c.client.R().DisableAutoReadResponse().
+		SetHeader("x-request-id", requestID).
 		SetBody(requestBody).
 		Post("https://www.perplexity.ai/rest/sse/perplexity_ask")
 
