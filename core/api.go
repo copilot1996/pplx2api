@@ -77,6 +77,8 @@ type PerplexityParams struct {
 	Version                         string      `json:"version"`
 	LastBackendUUID                 string      `json:"last_backend_uuid,omitempty"`
 	ReadWriteToken                  string      `json:"read_write_token,omitempty"`
+	IsProReasoningMode              bool        `json:"is_pro_reasoning_mode"`
+	ExpectSearchResults             string      `json:"expect_search_results"`
 }
 
 // Response structures
@@ -248,6 +250,8 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 			ForceEnableBrowserAgent:         false,
 			SupportedFeatures:               []string{"browser_agent_permission_banner_v1.1"},
 			Version:                         "2.18",
+			IsProReasoningMode:              true,
+			ExpectSearchResults:             "true",
 		},
 		QueryStr: message,
 	}
@@ -342,39 +346,44 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 		// --- 专家级：多块增量去重算法 ---
 		for _, block := range response.Blocks {
 			// 1. 处理新的 diff_block 逻辑
-			if block.DiffBlock != nil && block.DiffBlock.Field == "markdown_block" {
-				for _, patch := range block.DiffBlock.Patches {
-					if patch.Op == "add" {
-						if text, ok := patch.Value.(string); ok {
-							res := ""
-							if hasThinkOpen {
-								res += "</think>\n\n"
-								hasThinkOpen = false
-							}
-							res += text
-							full_text += res
-							if stream {
-								model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+			if block.DiffBlock != nil {
+				if block.DiffBlock.Field == "markdown_block" || block.DiffBlock.Field == "ask_text" {
+					for _, patch := range block.DiffBlock.Patches {
+						if patch.Op == "add" || patch.Op == "replace" {
+							if text, ok := patch.Value.(string); ok {
+								// 确保路径包含 chunks (针对 markdown_block) 或者为空 (针对 ask_text)
+								if strings.Contains(patch.Path, "chunks") || patch.Path == "" {
+									res := ""
+									if hasThinkOpen {
+										res += "</think>\n\n"
+										hasThinkOpen = false
+									}
+									res += text
+									full_text += res
+									if stream {
+										model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+									}
+								}
 							}
 						}
 					}
 				}
-			}
 
-			// 2. 处理推理（Reasoning）的 diff_block
-			if block.DiffBlock != nil && block.DiffBlock.Field == "reasoning_plan_block" {
-				for _, patch := range block.DiffBlock.Patches {
-					if patch.Op == "add" {
-						if text, ok := patch.Value.(string); ok {
-							res := ""
-							if !hasThinkOpen {
-								res += "<think>"
-								hasThinkOpen = true
-							}
-							res += text
-							full_text += res
-							if stream {
-								model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+				// 2. 处理推理（Reasoning）的 diff_block
+				if block.DiffBlock.Field == "reasoning_plan_block" {
+					for _, patch := range block.DiffBlock.Patches {
+						if patch.Op == "add" || patch.Op == "replace" {
+							if text, ok := patch.Value.(string); ok {
+								res := ""
+								if !hasThinkOpen {
+									res += "<think>"
+									hasThinkOpen = true
+								}
+								res += text
+								full_text += res
+								if stream {
+									model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+								}
 							}
 						}
 					}
