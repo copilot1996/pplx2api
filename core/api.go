@@ -369,6 +369,11 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 	var currentMarkdown string  // 记录完整的正文历史
 	var hasThinkOpen bool
 
+	// --- State Management for DiffBlocks ---
+	// Keep track of the full content of each chunk to calculate deltas correctly
+	textChunks := make(map[string]string)      // For markdown_block
+	reasoningChunks := make(map[string]string) // For reasoning_plan_block
+
 	// --- 新增状态变量 ---
 	var hasValidData bool = false // 标记是否收到了有效数据
 	var firstFewLines []string    // 用于记录非 SSE 的错误内容（前几行）
@@ -415,16 +420,38 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 							if text, ok := patch.Value.(string); ok {
 								// 确保路径包含 chunks (针对 markdown_block) 或者为空 (针对 ask_text)
 								if strings.Contains(patch.Path, "chunks") || patch.Path == "" {
-									res := ""
-									if hasThinkOpen {
-										res += "</think>\n\n"
-										hasThinkOpen = false
+									// Get current state
+									currentVal := textChunks[patch.Path]
+									// Calculate delta: only append what is new
+									// We assume 'text' (the new value) contains the full content for this chunk as intended by the server for "replace"
+									// Or "add" might add a new chunk.
+									// Perplexity "replace" on chunks/0 usually sends the WHOLE updated segment.
+									// We only want the *suffix* that we haven't seen.
+
+									var delta string
+									if strings.HasPrefix(text, currentVal) {
+										delta = text[len(currentVal):]
+									} else {
+										// If it's not a prefix, it might be a correction or a non-append update.
+										// For now, allow it to flow through if it's different, but this case is rare for streaming tokens.
+										// Use the full text if it doesn't match prefix (fallback).
+										delta = text
 									}
-									res += text
-									full_text += res
-									if stream {
-										model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+
+									if delta != "" {
+										res := ""
+										if hasThinkOpen {
+											res += "</think>\n\n"
+											hasThinkOpen = false
+										}
+										res += delta
+										full_text += res
+										if stream {
+											model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
+										}
 									}
+									// Update state *after* calculating delta
+									textChunks[patch.Path] = text
 								}
 							}
 						}
@@ -436,16 +463,29 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 					for _, patch := range block.DiffBlock.Patches {
 						if patch.Op == "add" || patch.Op == "replace" {
 							if text, ok := patch.Value.(string); ok {
-								res := ""
-								if !hasThinkOpen {
-									res += "<think>"
-									hasThinkOpen = true
+								// Similar logic for reasoning
+								currentVal := reasoningChunks[patch.Path]
+								
+								var delta string
+								if strings.HasPrefix(text, currentVal) {
+									delta = text[len(currentVal):]
+								} else {
+									delta = text
 								}
-								res += text
-								full_text += res
-								if stream {
-									model.ReturnOpenAIResponse(text, stream, gc, c.Model)
+
+								if delta != "" {
+									res := ""
+									if !hasThinkOpen {
+										res += "<think>"
+										hasThinkOpen = true
+									}
+									res += delta
+									full_text += res
+									if stream {
+										model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
+									}
 								}
+								reasoningChunks[patch.Path] = text
 							}
 						}
 					}
