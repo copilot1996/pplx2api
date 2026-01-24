@@ -165,11 +165,11 @@ func NewClient(fullCookie string, proxy string, model string, openSerch bool) *C
 		"origin":                      "https://www.perplexity.ai",
 		"priority":                    "u=1, i",
 		"referer":                     "https://www.perplexity.ai/",
-		"sec-ch-ua":                   `"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"`,
+		"sec-ch-ua":                   `"Google Chrome";v="144", "Chromium";v="144", "Not A(Brand";v="24"`,
 		"sec-ch-ua-arch":              `"arm"`,
 		"sec-ch-ua-bitness":           `"64"`,
-		"sec-ch-ua-full-version":      `"143.0.7499.193"`,
-		"sec-ch-ua-full-version-list": `"Google Chrome";v="143.0.7499.193", "Chromium";v="143.0.7499.193", "Not A(Brand";v="24.0.0.0"`,
+		"sec-ch-ua-full-version":      `"144.0.7500.123"`,
+		"sec-ch-ua-full-version-list": `"Google Chrome";v="144.0.7500.123", "Chromium";v="144.0.7500.123", "Not A(Brand";v="24.0.0.0"`,
 		"sec-ch-ua-mobile":            "?0",
 		"sec-ch-ua-model":             `""`,
 		"sec-ch-ua-platform":          `"macOS"`,
@@ -178,7 +178,7 @@ func NewClient(fullCookie string, proxy string, model string, openSerch bool) *C
 		"sec-fetch-mode":              "cors",
 		"sec-fetch-site":              "same-origin",
 		"sec-gpc":                     "1",
-		"user-agent":                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+		"user-agent":                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
 		"x-perplexity-request-reason": "perplexity-query-state-provider",
 		"x-request-id":                reqID, // 必须与 Payload 一致
 	}
@@ -270,8 +270,8 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 	// Generate new Request ID for this specific message
 	requestID := uuid.New().String()
 
-	// Randomize typing time (600ms - 1000ms)
-	typingTime := 600.0 + rand.Float64()*400.0
+	// Randomize typing time (1000ms - 2500ms)
+	typingTime := 1000.0 + rand.Float64()*1500.0
 
 	// 构造完全对齐的 Payload
 	requestBody := PerplexityRequest{
@@ -373,6 +373,7 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 	// Keep track of the full content of each chunk to calculate deltas correctly
 	textChunks := make(map[string]string)      // For markdown_block
 	reasoningChunks := make(map[string]string) // For reasoning_plan_block
+	var incrementalWebResults []WebResult      // For storing diff_block search results
 
 	// --- 新增状态变量 ---
 	var hasValidData bool = false // 标记是否收到了有效数据
@@ -465,7 +466,7 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 							if text, ok := patch.Value.(string); ok {
 								// Similar logic for reasoning
 								currentVal := reasoningChunks[patch.Path]
-								
+
 								var delta string
 								if strings.HasPrefix(text, currentVal) {
 									delta = text[len(currentVal):]
@@ -486,6 +487,21 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 									}
 								}
 								reasoningChunks[patch.Path] = text
+							}
+						}
+					}
+				}
+
+				// 3. 处理搜索结果（web_result_block 或 sources_mode_block）的 diff_block
+				if block.DiffBlock.Field == "web_result_block" || block.DiffBlock.Field == "sources_mode_block" {
+					for _, patch := range block.DiffBlock.Patches {
+						if patch.Op == "add" && strings.HasPrefix(patch.Path, "/rows/") {
+							// 解析 Patch 中的 WebResult
+							patchData, _ := json.Marshal(patch.Value)
+							var result WebResult
+							if err := json.Unmarshal(patchData, &result); err == nil {
+								incrementalWebResults = append(incrementalWebResults, result)
+								logger.Info(fmt.Sprintf("Found incremental search result: %s", result.Name))
 							}
 						}
 					}
@@ -577,16 +593,23 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 			}
 
 			// 3. 处理搜索结果
+			var finalWebResults []WebResult
 			for _, block := range response.Blocks {
-				if !config.ConfigInstance.IgnoreSerchResult && block.WebResultBlock != nil && len(block.WebResultBlock.WebResults) > 0 {
-					webText := "\n\n---\n"
-					for i, result := range block.WebResultBlock.WebResults {
-						webText += "\n\n" + utils.SearchShow(i, result.Name, result.URL, result.Snippet)
-					}
-					full_text += webText
-					if stream {
-						model.ReturnOpenAIResponse(webText, stream, gc, c.Model)
-					}
+				if block.WebResultBlock != nil {
+					finalWebResults = append(finalWebResults, block.WebResultBlock.WebResults...)
+				}
+			}
+			// 加入增量获取的结果
+			finalWebResults = append(finalWebResults, incrementalWebResults...)
+
+			if !config.ConfigInstance.IgnoreSerchResult && len(finalWebResults) > 0 {
+				webText := "\n\n---\n"
+				for i, result := range finalWebResults {
+					webText += "\n\n" + utils.SearchShow(i, result.Name, result.URL, result.Snippet)
+				}
+				full_text += webText
+				if stream {
+					model.ReturnOpenAIResponse(webText, stream, gc, c.Model)
 				}
 			}
 
