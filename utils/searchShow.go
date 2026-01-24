@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"pplx2api/config"
+	"strings"
 )
 
 func searchShowDetails(index int, title, url, snippet string) string {
@@ -15,6 +16,7 @@ func searchShowCompatible(index int, title, url, snippet string) string {
 
 func SearchShow(index int, title, url, snippet string) string {
 	index++
+	url = strings.TrimSpace(url)
 	if len([]rune(snippet)) > 150 {
 		runeSnippet := []rune(snippet)
 		snippet = fmt.Sprintf("%s ……", string(runeSnippet[:150]))
