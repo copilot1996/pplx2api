@@ -371,7 +371,7 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 
 	// --- State Management for DiffBlocks ---
 	// Keep track of the full content of each chunk to calculate deltas correctly
-	textChunks := make(map[string]string)      // For markdown_block
+	// textChunks := make(map[string]string)      // For markdown_block
 	reasoningChunks := make(map[string]string) // For reasoning_plan_block
 	var incrementalWebResults []WebResult      // For storing diff_block search results
 
@@ -415,50 +415,55 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 		for _, block := range response.Blocks {
 			// 1. 处理新的 diff_block 逻辑
 			if block.DiffBlock != nil {
-				if block.DiffBlock.Field == "markdown_block" || block.DiffBlock.Field == "ask_text" {
-					for _, patch := range block.DiffBlock.Patches {
-						if patch.Op == "add" || patch.Op == "replace" {
-							if text, ok := patch.Value.(string); ok {
-								// 确保路径包含 chunks (针对 markdown_block) 或者为空 (针对 ask_text)
-								if strings.Contains(patch.Path, "chunks") || patch.Path == "" {
-									// Get current state
-									currentVal := textChunks[patch.Path]
-									// Calculate delta: only append what is new
-									// We assume 'text' (the new value) contains the full content for this chunk as intended by the server for "replace"
-									// Or "add" might add a new chunk.
-									// Perplexity "replace" on chunks/0 usually sends the WHOLE updated segment.
-									// We only want the *suffix* that we haven't seen.
+				// =========== 修改开始：注释掉这段逻辑 ===========
+				// 暂时禁用 DiffBlock 处理正文，因为会导致首字符截断 (etch vs Fetch)
+				// 我们让后面的 MarkdownBlock 逻辑来接管正文，那个逻辑更稳定
+				/*
+					if block.DiffBlock.Field == "markdown_block" || block.DiffBlock.Field == "ask_text" {
+						for _, patch := range block.DiffBlock.Patches {
+							if patch.Op == "add" || patch.Op == "replace" {
+								if text, ok := patch.Value.(string); ok {
+									// 确保路径包含 chunks (针对 markdown_block) 或者为空 (针对 ask_text)
+									if strings.Contains(patch.Path, "chunks") || patch.Path == "" {
+										// Get current state
+										currentVal := textChunks[patch.Path]
+										// Calculate delta: only append what is new
+										// We assume 'text' (the new value) contains the full content for this chunk as intended by the server for "replace"
+										// Or "add" might add a new chunk.
+										// Perplexity "replace" on chunks/0 usually sends the WHOLE updated segment.
+										// We only want the *suffix* that we haven't seen.
 
-									var delta string
-									if strings.HasPrefix(text, currentVal) {
-										delta = text[len(currentVal):]
-									} else {
-										// If it's not a prefix, it might be a correction or a non-append update.
-										// For now, allow it to flow through if it's different, but this case is rare for streaming tokens.
-										// Use the full text if it doesn't match prefix (fallback).
-										delta = text
-									}
+										var delta string
+										if strings.HasPrefix(text, currentVal) {
+											delta = text[len(currentVal):]
+										} else {
+											// If it's not a prefix, it might be a correction or a non-append update.
+											// For now, allow it to flow through if it's different, but this case is rare for streaming tokens.
+											// Use the full text if it doesn't match prefix (fallback).
+											delta = text
+										}
 
-									if delta != "" {
-										res := ""
-										if hasThinkOpen {
-											res += "</think>\n\n"
-											hasThinkOpen = false
+										if delta != "" {
+											res := ""
+											if hasThinkOpen {
+												res += "</think>\n\n"
+												hasThinkOpen = false
+											}
+											res += delta
+											full_text += res
+											if stream {
+												model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
+											}
 										}
-										res += delta
-										full_text += res
-										if stream {
-											model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
-										}
+										// Update state *after* calculating delta
+										textChunks[patch.Path] = text
 									}
-									// Update state *after* calculating delta
-									textChunks[patch.Path] = text
 								}
 							}
 						}
 					}
-				}
-
+				*/
+				// =========== 修改结束：注释完毕 ===========
 				// 2. 处理推理（Reasoning）的 diff_block
 				if block.DiffBlock.Field == "reasoning_plan_block" {
 					for _, patch := range block.DiffBlock.Patches {
