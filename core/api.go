@@ -374,6 +374,8 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 	// textChunks := make(map[string]string)      // For markdown_block
 	reasoningChunks := make(map[string]string) // For reasoning_plan_block
 	var incrementalWebResults []WebResult      // For storing diff_block search results
+	var searchResultCount int                  // Track streaming search results
+	var citationsHeaderPrinted bool            // Track if citations header was printed
 
 	// --- 新增状态变量 ---
 	var hasValidData bool = false // 标记是否收到了有效数据
@@ -465,33 +467,46 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				*/
 				// =========== 修改结束：注释完毕 ===========
 				// 2. 处理推理（Reasoning）的 diff_block
-				if block.DiffBlock.Field == "reasoning_plan_block" {
+				if block.DiffBlock.Field == "reasoning_plan_block" || block.DiffBlock.Field == "plan_block" {
 					for _, patch := range block.DiffBlock.Patches {
 						if patch.Op == "add" || patch.Op == "replace" {
+							// 兼容 /goals/0/description 这种 path
+							isDescription := strings.Contains(patch.Path, "description")
+							// 旧逻辑通常没 path 或者是 key
+
 							if text, ok := patch.Value.(string); ok {
-								// Similar logic for reasoning
-								currentVal := reasoningChunks[patch.Path]
+								// 如果是 description 字段，或者旧版那种直接 value 是文本的
+								// 虽然旧版 value 通常是 struct... 但这里我们先假设它可能是字符串或者我们需要提取
+								// 实际上 patch.Value 本身如果是 string，那就直接用
 
-								var delta string
-								if strings.HasPrefix(text, currentVal) {
-									delta = text[len(currentVal):]
-								} else {
-									delta = text
-								}
+								// 针对 /goals/0/description，我们只关心 description
+								if isDescription || block.DiffBlock.Field == "reasoning_plan_block" {
+									// Get current state
+									currentVal := reasoningChunks[patch.Path]
 
-								if delta != "" {
-									res := ""
-									if !hasThinkOpen {
-										res += "<think>"
-										hasThinkOpen = true
+									var delta string
+									if strings.HasPrefix(text, currentVal) {
+										delta = text[len(currentVal):]
+									} else {
+										// 如果不是前缀，可能是非追加更新，直接用新值（虽然不太常见）
+										// 或者对于 replace 操作，不仅是 append
+										delta = text
 									}
-									res += delta
-									full_text += res
-									if stream {
-										model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
+
+									if delta != "" {
+										res := ""
+										if !hasThinkOpen {
+											res += "<think>"
+											hasThinkOpen = true
+										}
+										res += delta
+										full_text += res
+										if stream {
+											model.ReturnOpenAIResponse(delta, stream, gc, c.Model)
+										}
+										reasoningChunks[patch.Path] = text
 									}
 								}
-								reasoningChunks[patch.Path] = text
 							}
 						}
 					}
@@ -505,8 +520,40 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 							patchData, _ := json.Marshal(patch.Value)
 							var result WebResult
 							if err := json.Unmarshal(patchData, &result); err == nil {
+								// 存储到增量结果中
 								incrementalWebResults = append(incrementalWebResults, result)
 								logger.Info(fmt.Sprintf("Found incremental search result: %s", result.Name))
+
+								// 实时流式输出搜索结果
+								if !config.ConfigInstance.IgnoreSerchResult {
+									webText := ""
+									if !citationsHeaderPrinted {
+										webText += "\n\n---\n**Citations:**\n"
+										citationsHeaderPrinted = true
+									}
+
+									// 使用 searchResultCount 来作为索引 (0-based -> 1-based display)
+									// incrementalWebResults 包含所有增量，也就是当前追加的这个是第 len(incrementalWebResults)-1 个
+									// 但既然我们是一个个处理 patch，这里的 result 就是最新的
+									// 我们需要一个全局计数器，或者直接利用 incrementalWebResults 的长度
+
+									// 注意：incrementalWebResults 是在这个循环里 append 的。
+									// 所以当前的 index 是 len(incrementalWebResults) - 1
+									// 但还有 initial WebResultBlock 可能还没处理...
+									// 通常 DiffBlock 是在初始块之后的。
+									// 既然我们想实时，那就不仅仅是 append，而是 print。
+
+									// 简单起见，我们使用一个独立的计数器 searchResultCount，每次打印一个就 +1
+									// 这样可以保证顺序
+
+									webText += "\n\n" + utils.SearchShow(searchResultCount, result.Name, result.URL, result.Snippet)
+									searchResultCount++
+
+									full_text += webText
+									if stream {
+										model.ReturnOpenAIResponse(webText, stream, gc, c.Model)
+									}
+								}
 							}
 						}
 					}
@@ -597,32 +644,43 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				}
 			}
 
-			// 3. 处理搜索结果
+			// 3. 处理搜索结果 (最终汇总 - 仅当增量未触发时兜底，防止重复)
 			var finalWebResults []WebResult
 			for _, block := range response.Blocks {
 				if block.WebResultBlock != nil {
 					finalWebResults = append(finalWebResults, block.WebResultBlock.WebResults...)
 				}
 			}
-			// 加入增量获取的结果
-			finalWebResults = append(finalWebResults, incrementalWebResults...)
-
 			if !config.ConfigInstance.IgnoreSerchResult && len(finalWebResults) > 0 {
-				webText := "\n\n---\n**Citations:**\n"
+				webText := ""
+				// 如果还没打印过头，且有结果，打印头
+				if !citationsHeaderPrinted && len(finalWebResults) > 0 {
+					webText += "\n\n---\n**Citations:**\n"
+					citationsHeaderPrinted = true
+				}
 
-				maxCitations := 10
-				for i, result := range finalWebResults {
+				maxCitations := 50 // 放宽限制，或者保持 10
+				// 只打印 尚未打印的 结果
+				// 我们已经用 searchResultCount 记录了打印了多少个 (假设都是按顺序)
+				// finalWebResults 包含 所有结果 (包括增量)
+
+				// 遍历 finalWebResults，从 searchResultCount 开始
+				for i := searchResultCount; i < len(finalWebResults); i++ {
 					if i >= maxCitations {
 						break
 					}
+					result := finalWebResults[i]
 					if result.URL == "" {
 						continue
 					}
 					webText += "\n\n" + utils.SearchShow(i, result.Name, result.URL, result.Snippet)
 				}
-				full_text += webText
-				if stream {
-					model.ReturnOpenAIResponse(webText, stream, gc, c.Model)
+
+				if webText != "" {
+					full_text += webText
+					if stream {
+						model.ReturnOpenAIResponse(webText, stream, gc, c.Model)
+					}
 				}
 			}
 
