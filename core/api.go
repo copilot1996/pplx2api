@@ -603,8 +603,16 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 			finalWebResults = append(finalWebResults, incrementalWebResults...)
 
 			if !config.ConfigInstance.IgnoreSerchResult && len(finalWebResults) > 0 {
-				webText := "\n\n---\n"
+				webText := "\n\n---\n**Citations:**\n"
+
+				maxCitations := 10
 				for i, result := range finalWebResults {
+					if i >= maxCitations {
+						break
+					}
+					if result.URL == "" {
+						continue
+					}
 					webText += "\n\n" + utils.SearchShow(i, result.Name, result.URL, result.Snippet)
 				}
 				full_text += webText

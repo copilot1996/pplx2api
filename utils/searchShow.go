@@ -11,16 +11,21 @@ func searchShowDetails(index int, title, url, snippet string) string {
 }
 
 func searchShowCompatible(index int, title, url, snippet string) string {
-	return fmt.Sprintf("[%d] [%s](%s):\n%s\n", index, title, url, snippet)
+	return fmt.Sprintf("[%d] [%s](%s)", index, title, url)
 }
 
 func SearchShow(index int, title, url, snippet string) string {
 	index++
 	url = strings.TrimSpace(url)
-	if len([]rune(snippet)) > 150 {
-		runeSnippet := []rune(snippet)
-		snippet = fmt.Sprintf("%s ……", string(runeSnippet[:150]))
+	if url == "" {
+		return ""
 	}
+
+	if len([]rune(snippet)) > 100 {
+		runeSnippet := []rune(snippet)
+		snippet = fmt.Sprintf("%s...", string(runeSnippet[:100]))
+	}
+
 	if config.ConfigInstance.SearchResultCompatible {
 		return searchShowCompatible(index, title, url, snippet)
 	}
