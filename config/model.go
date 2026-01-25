@@ -2,16 +2,21 @@ package config
 
 var ModelReverseMap = map[string]string{}
 var ModelMap = map[string]string{
+	// Perplexity 原生模型
+	"sonar":               "turbo",           // 基础模型
+	"sonar-pro":           "sonar_pro",       // Pro 模型
+	"sonar-reasoning":     "sonar_reasoning", // 推理模型
+	"sonar-reasoning-pro": "sonar_reasoning_pro", // Pro 推理模型
+
+	// Perplexity 映射的高级模型 (根据你的需求保留)
 	"gpt-5.2":                 "gpt52",
 	"gpt-5.1":                 "gpt51",
 	"claude-4.5-sonnet":       "claude45sonnet",
 	"claude-4.5-sonnet-think": "claude45sonnetthinking",
-	"claude-4.5-opus-think":   "claude45opusthinking",
 	"gemini-3-pro":            "gemini30pro",
-	"gemini-3-flash":          "gemini3flash",
-	"kimi-k2":                 "kimik2thinking",
-	"grok-4.1":                "grok41",
-	"sonar":                   "turbo",
+	
+	// 你可以注释掉你不用的 gpt-4o 或其他模型
+	// "gpt-4o": "gpt4o", 
 }
 var MaxModelMap = map[string]string{
 	"claude-4.5-opus-think": "claude45opusthinking",

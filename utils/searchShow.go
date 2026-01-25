@@ -2,18 +2,27 @@ package utils
 
 import (
 	"fmt"
-	"strings"
 	"pplx2api/config"
+	"strings"
 )
 
 // cleanURL 对 URL 进行简单的转义处理，防止破坏 Markdown 结构
+// cleanURL 强力清洗 URL
 func cleanURL(rawURL string) string {
+	// 1. 去除首尾所有空白字符 (空格、换行、Tab)
 	rawURL = strings.TrimSpace(rawURL)
-	// 替换空格为 %20
+
+	// 2. 移除可能存在的双重协议头 (防止 https://https://)
+	if strings.HasPrefix(rawURL, "https://https://") {
+		rawURL = strings.Replace(rawURL, "https://https://", "https://", 1)
+	}
+
+	// 3. 替换 URL 中间的空格为 %20
 	rawURL = strings.ReplaceAll(rawURL, " ", "%20")
-	// 替换 Markdown 链接语法的关键字符
+	// 4. 转义括号
 	rawURL = strings.ReplaceAll(rawURL, "(", "%28")
 	rawURL = strings.ReplaceAll(rawURL, ")", "%29")
+
 	return rawURL
 }
 
@@ -29,30 +38,35 @@ func cleanTitle(title string) string {
 }
 
 func searchShowDetails(index int, title, url, snippet string) string {
-	// 优化：直接把标题作为链接文本，去掉 snippet（摘要），因为文末引用通常只需要标题
-	// 如果需要摘要，可以保留 snippet
-	return fmt.Sprintf("[%d] [%s](%s)", index, cleanTitle(title), cleanURL(url))
+	// 强制清洗
+	safeURL := cleanURL(url)
+	if safeURL == "" {
+		return ""
+	}
+	// 确保 ]( 后面紧跟 URL，没有任何空格
+	return fmt.Sprintf("[%d] [%s](%s)", index, cleanTitle(title), safeURL)
 }
 
 func searchShowCompatible(index int, title, url, snippet string) string {
-	// 优化：更紧凑的 Markdown 列表格式
-	// 格式：1. [网页标题](URL) - 摘要前50个字...
-	
-	// 截断过长的 snippet
 	if len([]rune(snippet)) > 50 {
 		runeSnippet := []rune(snippet)
 		snippet = string(runeSnippet[:50]) + "..."
 	}
-	
-	// 移除 snippet 中的换行符，保持一行
 	snippet = strings.ReplaceAll(snippet, "\n", " ")
-	
-	return fmt.Sprintf("%d. [%s](%s) - %s", index, cleanTitle(title), cleanURL(url), snippet)
+
+	// 强制清洗
+	safeURL := cleanURL(url)
+	if safeURL == "" {
+		return ""
+	}
+
+	// 确保 ]( 后面紧跟 URL
+	return fmt.Sprintf("%d. [%s](%s) - %s", index, cleanTitle(title), safeURL, snippet)
 }
 
 func SearchShow(index int, title, url, snippet string) string {
 	index++
-	// 初步去除首尾空格
+	// 这里的 TrimSpace 其实在 cleanURL 里也做了，双重保险
 	url = strings.TrimSpace(url)
 	if url == "" {
 		return ""
