@@ -10,6 +10,13 @@ var ModelMap = map[string]string{
 	"claude-4.5-sonnet-think": "claude45sonnetthinking",
 	"gemini-3-pro":            "gemini30pro",
 	"gpt-5.2":                 "gpt52",
+
+	// 修复 Search/Research (将 sonar-pro 映射到网页版的高级模型)
+	"sonar-pro": "gpt52",
+
+	// 修复 Reasoning (将 sonar-reasoning-pro 映射到网页版的思考模型)
+	"sonar-reasoning-pro": "claude45sonnetthinking",
+	"sonar-reasoning":     "claude45sonnetthinking",
 }
 var MaxModelMap = map[string]string{}
 
