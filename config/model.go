@@ -6,8 +6,8 @@ var ModelMap = map[string]string{
 	"sonar": "turbo", // 基础模型
 
 	// Perplexity 映射的高级模型 (根据你的需求保留)
-	"claude-4.5-sonnet":       "claude45sonnet",
-	"claude-4.5-sonnet-think": "claude45sonnetthinking",
+	"claude-sonnet-4-6":       "claude46sonnet",
+	"claude-sonnet-4-6-think": "claude46sonnetthinking",
 	"gemini-3-pro":            "gemini30pro",
 	"gpt-5.2":                 "gpt52",
 
@@ -15,8 +15,8 @@ var ModelMap = map[string]string{
 	"sonar-pro": "gpt52",
 
 	// 修复 Reasoning (将 sonar-reasoning-pro 映射到网页版的思考模型)
-	"sonar-reasoning-pro": "claude45sonnetthinking",
-	"sonar-reasoning":     "claude45sonnetthinking",
+	"sonar-reasoning-pro": "claude46sonnetthinking",
+	"sonar-reasoning":     "claude46sonnetthinking",
 }
 var MaxModelMap = map[string]string{}
 
